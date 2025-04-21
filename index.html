@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+<title>notepad</title>
+</head>
+<style type="text/css">
+ol,ul{
+display:block;
+list-style-type:none;
+margin:3px;
+}
+</style><body>
+<div>&lt;!DOCTYPE html&gt;<br>
+&lt;html&gt;<br>
+&lt;head&gt;<br>
+&nbsp; &lt;meta name="viewport" content="width=device-width, initial-scale=1.0"&gt;<br>
+&nbsp; &lt;title&gt;Bubble Shooter&lt;/title&gt;<br>
+&nbsp; &lt;style&gt;<br>
+&nbsp;&nbsp;&nbsp; html, body {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; margin: 0;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; background: #111;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; overflow: hidden;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; touch-action: none;<br>
+&nbsp;&nbsp;&nbsp; }<br>
+&nbsp;&nbsp;&nbsp; canvas {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; display: block;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; background: #222;<br>
+&nbsp;&nbsp;&nbsp; }<br>
+&nbsp; &lt;/style&gt;<br>
+&lt;/head&gt;<br>
+&lt;body&gt;<br>
+&lt;canvas id="game"&gt;&lt;/canvas&gt;<br>
+&lt;script&gt;<br>
+const canvas = document.getElementById('game');<br>
+const ctx = canvas.getContext('2d');<br>
+let width = window.innerWidth;<br>
+let height = window.innerHeight;<br>
+canvas.width = width;<br>
+canvas.height = height;<br>
+<br>
+// Constants<br>
+const bubbleRadius = 20;<br>
+const gridRows = 6;<br>
+const gridCols = 8;<br>
+const colors = ['red', 'yellow', 'blue', 'green', 'purple'];<br>
+<br>
+let grid = [];<br>
+let shooter = {<br>
+&nbsp; x: width / 2,<br>
+&nbsp; y: height - 60,<br>
+&nbsp; angle: Math.PI / 2,<br>
+&nbsp; color: colors[Math.floor(Math.random() * colors.length)],<br>
+&nbsp; bubble: null<br>
+};<br>
+<br>
+// Create initial grid<br>
+for (let r = 0; r &lt; gridRows; r++) {<br>
+&nbsp; let row = [];<br>
+&nbsp; for (let c = 0; c &lt; gridCols; c++) {<br>
+&nbsp;&nbsp;&nbsp; if (Math.random() &gt; 0.3) {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; row.push(colors[Math.floor(Math.random() * colors.length)]);<br>
+&nbsp;&nbsp;&nbsp; } else {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; row.push(null);<br>
+&nbsp;&nbsp;&nbsp; }<br>
+&nbsp; }<br>
+&nbsp; grid.push(row);<br>
+}<br>
+<br>
+// Variables<br>
+let shooting = false;<br>
+let bubble = null;<br>
+let score = 0;<br>
+<br>
+// Helper functions<br>
+function getBubbleGridPosition(x, y) {<br>
+&nbsp; let row = Math.floor(y / (bubbleRadius * 2));<br>
+&nbsp; let col = Math.floor((x - (row % 2) * bubbleRadius) / (bubbleRadius * 2));<br>
+&nbsp; return { row, col };<br>
+}<br>
+<br>
+function findConnectedBubbles(row, col, color, visited = {}) {<br>
+&nbsp; let key = `${row},${col}`;<br>
+&nbsp; if (visited[key] || grid[row]?.[col] !== color) return [];<br>
+<br>
+&nbsp; visited[key] = true;<br>
+&nbsp; let group = [{ row, col }];<br>
+&nbsp; let neighbors = getNeighbors(row, col);<br>
+<br>
+&nbsp; for (let { r, c } of neighbors) {<br>
+&nbsp;&nbsp;&nbsp; group = group.concat(findConnectedBubbles(r, c, color, visited));<br>
+&nbsp; }<br>
+&nbsp; return group;<br>
+}<br>
+<br>
+function getNeighbors(row, col) {<br>
+&nbsp; const evenRowOffsets = [<br>
+&nbsp;&nbsp;&nbsp; { dr: -1, dc: 0 }, { dr: -1, dc: 1 },<br>
+&nbsp;&nbsp;&nbsp; { dr: 0, dc: -1 }, { dr: 0, dc: 1 },<br>
+&nbsp;&nbsp;&nbsp; { dr: 1, dc: 0 }, { dr: 1, dc: 1 }<br>
+&nbsp; ];<br>
+&nbsp; const oddRowOffsets = [<br>
+&nbsp;&nbsp;&nbsp; { dr: -1, dc: -1 }, { dr: -1, dc: 0 },<br>
+&nbsp;&nbsp;&nbsp; { dr: 0, dc: -1 }, { dr: 0, dc: 1 },<br>
+&nbsp;&nbsp;&nbsp; { dr: 1, dc: -1 }, { dr: 1, dc: 0 }<br>
+&nbsp; ];<br>
+&nbsp; const offsets = row % 2 === 0 ? evenRowOffsets : oddRowOffsets;<br>
+<br>
+&nbsp; return offsets.map(({ dr, dc }) =&gt; {<br>
+&nbsp;&nbsp;&nbsp; return { r: row + dr, c: col + dc };<br>
+&nbsp; }).filter(({ r, c }) =&gt;<br>
+&nbsp;&nbsp;&nbsp; r &gt;= 0 &amp;&amp; r &lt; gridRows &amp;&amp; c &gt;= 0 &amp;&amp; c &lt; gridCols<br>
+&nbsp; );<br>
+}<br>
+<br>
+function findOrphanBubbles() {<br>
+&nbsp; let visited = {};<br>
+&nbsp; let connectedToTop = [];<br>
+<br>
+&nbsp; // Find all bubbles connected to the top row<br>
+&nbsp; for (let col = 0; col &lt; gridCols; col++) {<br>
+&nbsp;&nbsp;&nbsp; if (grid[0][col]) {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; connectedToTop = connectedToTop.concat(findConnectedBubbles(0, col, grid[0][col], visited));<br>
+&nbsp;&nbsp;&nbsp; }<br>
+&nbsp; }<br>
+<br>
+&nbsp; // All unvisited bubbles are orphans (disconnected)<br>
+&nbsp; let orphans = [];<br>
+&nbsp; for (let r = 0; r &lt; gridRows; r++) {<br>
+&nbsp;&nbsp;&nbsp; for (let c = 0; c &lt; gridCols; c++) {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; if (grid[r][c] &amp;&amp; !visited[`${r},${c}`]) {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; orphans.push({ r, c });<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; }<br>
+&nbsp;&nbsp;&nbsp; }<br>
+&nbsp; }<br>
+&nbsp; return orphans;<br>
+}<br>
+<br>
+function checkGameOver() {<br>
+&nbsp; for (let c = 0; c &lt; gridCols; c++) {<br>
+&nbsp;&nbsp;&nbsp; if (grid[0][c]) {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; return true; // Game over if any bubble is in the top row<br>
+&nbsp;&nbsp;&nbsp; }<br>
+&nbsp; }<br>
+&nbsp; return false;<br>
+}<br>
+<br>
+function resetGame() {<br>
+&nbsp; grid = [];<br>
+&nbsp; score = 0;<br>
+&nbsp; for (let r = 0; r &lt; gridRows; r++) {<br>
+&nbsp;&nbsp;&nbsp; let row = [];<br>
+&nbsp;&nbsp;&nbsp; for (let c = 0; c &lt; gridCols; c++) {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; if (Math.random() &gt; 0.3) {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; row.push(colors[Math.floor(Math.random() * colors.length)]);<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; } else {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; row.push(null);<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; }<br>
+&nbsp;&nbsp;&nbsp; }<br>
+&nbsp;&nbsp;&nbsp; grid.push(row);<br>
+&nbsp; }<br>
+}<br>
+<br>
+// Draw functions<br>
+function drawBubble(x, y, color) {<br>
+&nbsp; ctx.beginPath();<br>
+&nbsp; ctx.arc(x, y, bubbleRadius, 0, Math.PI * 2);<br>
+&nbsp; ctx.fillStyle = color;<br>
+&nbsp; ctx.fill();<br>
+&nbsp; ctx.strokeStyle = "#000";<br>
+&nbsp; ctx.stroke();<br>
+}<br>
+<br>
+function drawGrid() {<br>
+&nbsp; for (let r = 0; r &lt; gridRows; r++) {<br>
+&nbsp;&nbsp;&nbsp; for (let c = 0; c &lt; gridCols; c++) {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; let color = grid[r][c];<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; if (color) {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; let offsetX = (r % 2) * bubbleRadius;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; let x = c * bubbleRadius * 2 + bubbleRadius + offsetX;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; let y = r * bubbleRadius * 2 + bubbleRadius;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; drawBubble(x, y, color);<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; }<br>
+&nbsp;&nbsp;&nbsp; }<br>
+&nbsp; }<br>
+}<br>
+<br>
+function drawShooter() {<br>
+&nbsp; // Aim line<br>
+&nbsp; ctx.beginPath();<br>
+&nbsp; ctx.moveTo(shooter.x, shooter.y);<br>
+&nbsp; ctx.lineTo(shooter.x + Math.cos(shooter.angle) * 40, shooter.y + Math.sin(shooter.angle) * 40);<br>
+&nbsp; ctx.strokeStyle = "#fff";<br>
+&nbsp; ctx.stroke();<br>
+<br>
+&nbsp; // Next bubble<br>
+&nbsp; drawBubble(shooter.x, shooter.y, shooter.color);<br>
+}<br>
+<br>
+function drawScore() {<br>
+&nbsp; ctx.font = "30px Arial";<br>
+&nbsp; ctx.fillStyle = "#fff";<br>
+&nbsp; ctx.fillText("Score: " + score, 20, 40);<br>
+}<br>
+<br>
+// Game loop<br>
+function loop() {<br>
+&nbsp; ctx.clearRect(0, 0, width, height);<br>
+&nbsp; drawGrid();<br>
+&nbsp; drawShooter();<br>
+&nbsp; drawScore();<br>
+<br>
+&nbsp; if (shooting &amp;&amp; bubble) {<br>
+&nbsp;&nbsp;&nbsp; bubble.x += bubble.vx;<br>
+&nbsp;&nbsp;&nbsp; bubble.y += bubble.vy;<br>
+<br>
+&nbsp;&nbsp;&nbsp; // Bounce off walls<br>
+&nbsp;&nbsp;&nbsp; if (bubble.x &lt; bubbleRadius || bubble.x &gt; width - bubbleRadius) {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; bubble.vx *= -1;<br>
+&nbsp;&nbsp;&nbsp; }<br>
+<br>
+&nbsp;&nbsp;&nbsp; drawBubble(bubble.x, bubble.y, bubble.color);<br>
+<br>
+&nbsp;&nbsp;&nbsp; // Check collision<br>
+&nbsp;&nbsp;&nbsp; let collided = false;<br>
+&nbsp;&nbsp;&nbsp; for (let r = 0; r &lt; gridRows; r++) {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; for (let c = 0; c &lt; gridCols; c++) {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; let color = grid[r][c];<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; if (!color) continue;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; let offsetX = (r % 2) * bubbleRadius;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; let gx = c * bubbleRadius * 2 + bubbleRadius + offsetX;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; let gy = r * bubbleRadius * 2 + bubbleRadius;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; let dx = gx - bubble.x;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; let dy = gy - bubble.y;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; let dist = Math.sqrt(dx * dx + dy * dy);<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; if (dist &lt; bubbleRadius * 2 - 2) {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; collided = true;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; break;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; }<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; }<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; if (collided) break;<br>
+&nbsp;&nbsp;&nbsp; }<br>
+<br>
+&nbsp;&nbsp;&nbsp; if (collided || bubble.y &lt; bubbleRadius) {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; let pos = getBubbleGridPosition(bubble.x, bubble.y);<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; if (pos.row &gt;= 0 &amp;&amp; pos.row &lt; gridRows &amp;&amp; pos.col &gt;= 0 &amp;&amp; pos.col &lt; gridCols) {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; grid[pos.row][pos.col] = bubble.color;<br>
+<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; // Check for matches<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; let group = findConnectedBubbles(pos.row, pos.col, bubble.color);<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; if (group.length &gt;= 3) {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; score += group.length * 10; // 10 points per bubble<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; for (let b of group) {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; grid[b.row][b.col] = null;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; }<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; }<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; }<br>
+<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; // Make orphan bubbles fall<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; let orphans = findOrphanBubbles();<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; for (let orphan of orphans) {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; grid[orphan.r][orphan.c] = null; // Remove orphan<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; let newRow = orphan.r;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; while (newRow &lt; gridRows - 1 &amp;&amp; !grid[newRow + 1][orphan.c]) {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; newRow++;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; }<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; grid[newRow][orphan.c] = orphan.color;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; }<br>
+<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; bubble = null;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; shooting = false;<br>
+&nbsp;&nbsp;&nbsp; }<br>
+&nbsp; }<br>
+<br>
+&nbsp; if (checkGameOver()) {<br>
+&nbsp;&nbsp;&nbsp; alert("Game Over! Final Score: " + score);<br>
+&nbsp;&nbsp;&nbsp; resetGame();<br>
+&nbsp; }<br>
+<br>
+&nbsp; requestAnimationFrame(loop);<br>
+}<br>
+<br>
+// Handle input<br>
+canvas.addEventListener('touchstart', e =&gt; {<br>
+&nbsp; let touch = e.touches[0];<br>
+&nbsp; let angle = Math.atan2(touch.clientY - shooter.y, touch.clientX - shooter.x);<br>
+&nbsp; shooter.angle = angle;<br>
+&nbsp; if (!shooting) {<br>
+&nbsp;&nbsp;&nbsp; bubble = {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; x: shooter.x,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; y: shooter.y,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; color: shooter.color,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; vx: Math.cos(shooter.angle) * 6,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; vy: Math.sin(shooter.angle) * 6<br>
+&nbsp;&nbsp;&nbsp; };<br>
+&nbsp;&nbsp;&nbsp; shooting = true;<br>
+&nbsp; }<br>
+});<br>
+<br>
+// Initialize<br>
+loop();<br>
+&lt;/script&gt;<br>
+&lt;/body&gt;<br>
+&lt;/html&gt;<br>
+</div>
+</body>
+</html>
